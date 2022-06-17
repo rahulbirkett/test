@@ -1,0 +1,163 @@
+--source tables
+select * from student_marks;
+
+select * from student_address;
+
+select * from dept_details;
+
+select * from student_details;
+
+--target tables
+select * from Department_Dimension;
+
+select * from Student_Dimension;
+
+select * from Marks_Fact;
+
+select * from Subject_Average_Aggregate;
+
+select * from Subject_Pass_Percent_Aggregate;
+
+
+--source table 
+create table student_details 
+(
+Student_ID number,
+Student_Name varchar2(100),
+dept_id varchar2(10),
+roll_no number
+);
+
+
+create table student_address 
+(
+Address varchar2(100),
+Postal_code varchar2(100),
+Phone_Number varchar2(100),
+student_id number
+);
+
+create table student_marks 
+(
+roll varchar2(100),
+mark1 varchar2(100),
+mark2 varchar2(100),
+mark3 varchar2(100),
+mark4 varchar2(100),
+mark5 varchar2(100)
+);
+
+create table dept_details 
+(
+Dept_code varchar2(10),
+Dept_Name varchar2(100)
+);
+
+
+--target table
+create table Department_Dimension 
+(
+Dept_ID varchar2(10),
+Dept_Name varchar2(100)
+);
+
+create table student_dimension 
+(
+Student_ID number,
+Student_name varchar2(100),
+Dept_ID varchar2(10),
+Address varchar2(100),
+Postal_code number,
+Phone_Number number
+);
+
+create table Marks_Fact
+(
+Student_ID number,
+Student_name varchar2(100),
+Dept_ID varchar2(10),
+Dept_Name varchar2(100),
+Subject1 number,
+Subject2 number,
+Subject3 number,
+Subject4 number,
+Subject5 number,
+Total number,
+Average number,
+Result varchar2(10)
+);
+
+create table Subject_Average_Aggregate
+(
+Dept_ID varchar2(10),
+Dept_Name varchar2(100),
+Subject1_Average number,
+Subject2_Average number,
+Subject3_Average number,
+Subject4_Average number,
+Subject5_Average number
+);
+
+create table Subject_Pass_Percent_Aggregate
+(
+Dept_ID varchar2(10),
+Dept_Name varchar2(100),
+Subject1_Pass_Percentage number,
+Subject2_Pass_Percentage number,
+Subject3_Pass_Percentage number,
+Subject4_Pass_Percentage number,
+Subject5_Pass_Percentage number
+);
+
+
+-- ETL
+
+insert into Department_Dimension (
+select trim(dept_code), trim(dept_name) from dept_details);
+
+
+insert into student_dimension 
+(
+select sd.student_id, sd.student_name,sd.dept_id, upper(sa.address), REGEXP_REPLACE(sa.postal_code, '[^0-9A-Za-z]', '') ,
+case when 
+DECODE(replace(translate(sa.phone_number,'1234567890','##########'),'#'),NULL,'NUMBER','NON_NUMBER') = 'NUMBER' AND 
+ length(sa.phone_number) = 10 then sa.phone_number else null end phone_num
+from student_details sd, student_address sa
+where sd.student_id = sa.student_id
+);
+
+
+
+insert into Marks_Fact 
+(
+select sd.student_id , sd.student_name, sd.dept_id,  dd.dept_name, sm.mark1, sm.mark2, sm.mark3,sm.mark4,sm.mark5, 
+  sm.mark1+ sm.mark2+ sm.mark3 +sm.mark4+sm.mark5 s_total,
+  ( sm.mark1+ sm.mark2+ sm.mark3 +sm.mark4+sm.mark5)/5 s_avg,
+  case when sm.mark1 >= 50 and sm.mark2 >= 50 and sm.mark3 >= 50 and sm.mark4 >= 50 and sm.mark5 >= 50 then 'Pass' else 'Fail' end pass_fail
+from student_details sd, student_address sa, student_marks sm, dept_details dd
+where sd.student_id = sa.student_id
+  and sd.roll_no = sm.roll
+  and sd.dept_id = trim(dd.dept_code)
+);
+
+insert into Subject_Average_Aggregate 
+(
+select  sd.dept_id, dd.dept_name, avg(sm.mark1), avg(sm.mark2), avg(sm.mark3), avg(sm.mark4), avg(sm.mark5)
+from dept_details dd, student_details sd, student_marks sm 
+where trim(dd.dept_code) = sd.dept_id
+  and sd.roll_no = sm.roll
+  group by sd.dept_id, dd.dept_name
+);
+
+insert into Subject_Pass_Percent_Aggregate 
+(
+select  sd.dept_id, dd.dept_name, (sum (case when sm.mark1 >=50 then 1 else 0 end)/count(1))*100 pp1,  
+(sum (case when sm.mark2 >=50 then 1 else 0 end)/count(1))*100 pp2,
+(sum (case when sm.mark3 >=50 then 1 else 0 end)/count(1))*100 pp3,
+(sum (case when sm.mark4 >=50 then 1 else 0 end)/count(1))*100 pp4,
+(sum (case when sm.mark5 >=50 then 1 else 0 end)/count(1))*100 pp5
+from dept_details dd, student_details sd, student_marks sm 
+where trim(dd.dept_code) = sd.dept_id
+  and sd.roll_no = sm.roll
+  group by sd.dept_id, dd.dept_name
+);
